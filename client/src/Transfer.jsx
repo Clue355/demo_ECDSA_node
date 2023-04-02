@@ -1,28 +1,47 @@
+import * as secp from "ethereum-cryptography/secp256k1"
+import { toHex } from "ethereum-cryptography/utils"
+import { keccak256 } from "ethereum-cryptography/keccak";
+import { utf8ToBytes } from "ethereum-cryptography/utils";
+
 import { useState } from "react";
 import server from "./server";
 
-function Transfer({ address, setBalance }) {
+
+function Transfer({ address, setBalance, handleBool, privateKey}) {
   const [sendAmount, setSendAmount] = useState("");
   const [recipient, setRecipient] = useState("");
+
 
   const setValue = (setter) => (evt) => setter(evt.target.value);
 
   async function transfer(evt) {
     evt.preventDefault();
+    if(!privateKey) return alert("Please enter a private key")
+
+    if(privateKey.length < 32) return alert("Please enter a valid private key")
+    
+    let msgHash = await messageHash(recipient, sendAmount)
+    const [signature, recoveryBit] = await secp.sign(msgHash, privateKey, {recovered: true})
 
     try {
+      
       const {
         data: { balance },
       } = await server.post(`send`, {
-        sender: address,
-        amount: parseInt(sendAmount),
+        signature,
+        address,
+        msgHash,
+        recoveryBit,
         recipient,
+        amount: parseInt(sendAmount),
       });
       setBalance(balance);
+      handleBool()
     } catch (ex) {
       alert(ex.response.data.message);
     }
   }
+
 
   return (
     <form className="container transfer" onSubmit={transfer}>
@@ -46,9 +65,22 @@ function Transfer({ address, setBalance }) {
         ></input>
       </label>
 
+    
       <input type="submit" className="button" value="Transfer" />
     </form>
   );
 }
 
 export default Transfer;
+
+function messageHash(recipient, amount) {
+  const message = utf8ToBytes(`${recipient}${amount}`);
+  return keccak256(message);
+}
+
+
+function createKey() {
+  const privateKey = secp.utils.randomPrivateKey();
+  return toHex(privateKey);
+}
+
